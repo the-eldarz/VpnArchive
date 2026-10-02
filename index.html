@@ -358,7 +358,7 @@ body{background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;
   </div>
 
   <div style="text-align:center;font-size:12px;color:var(--text-muted);padding:0 20px 20px;">
-    VPN Архив v1.0.1
+    VPN Архив v1.0.2
   </div>
 </div>
 
@@ -442,20 +442,33 @@ const SERVERS = [
 ];
 
 // ================== КЛИЕНТЫ ==================
+// Для каждого клиента — массив возможных пакетов Android и массив схем
 const CLIENTS = {
   happ: {
     name: 'Happ',
-    androidPackage: 'app.happ',
-    scheme: url => 'happ://add/' + encodeURIComponent(url),
+    androidPackages: ['com.happproxy', 'su.happ.proxyutility'],
+    schemes: url => {
+      const enc = encodeURIComponent(url);
+      return [
+        'happ://add/' + enc,
+        'happ://import?url=' + enc,
+      ];
+    },
     stores: {
-      android: 'https://play.google.com/store/apps/details?id=app.happ',
+      android: 'https://play.google.com/store/apps/details?id=com.happproxy',
       ios: 'https://apps.apple.com/ru/app/happ-proxy-utility/id673623643'
     }
   },
   v2rayng: {
     name: 'v2rayNG',
-    androidPackage: 'com.v2ray.ang',
-    scheme: url => 'v2rayng://install-sub?url=' + encodeURIComponent(url),
+    androidPackages: ['com.v2ray.ang'],
+    schemes: url => {
+      const enc = encodeURIComponent(url);
+      return [
+        'v2rayng://install-sub?url=' + enc,
+        'v2rayng://install-config?url=' + enc,
+      ];
+    },
     stores: {
       android: 'https://github.com/2dust/v2rayNG/releases/latest',
       ios: null
@@ -463,8 +476,15 @@ const CLIENTS = {
   },
   hiddify: {
     name: 'Hiddify',
-    androidPackage: 'app.hiddify.com',
-    scheme: url => 'hiddify://import/' + encodeURIComponent(url),
+    androidPackages: ['app.hiddify.com'],
+    schemes: url => {
+      let b64 = '';
+      try { b64 = btoa(unescape(encodeURIComponent(url))).replace(/=+$/,''); } catch(e){}
+      return [
+        'hiddify://import/' + b64,
+        'hiddify://import?url=' + encodeURIComponent(url),
+      ];
+    },
     stores: {
       android: 'https://play.google.com/store/apps/details?id=app.hiddify.com',
       ios: 'https://apps.apple.com/app/hiddify-proxy-vpn/id6596777532'
@@ -614,7 +634,7 @@ function updateMainUI(){
   });
 }
 
-// ================== ОТКРЫТИЕ КЛИЕНТА (РАБОТАЕТ НА GITHUB PAGES) ==================
+// ================== ОТКРЫТИЕ КЛИЕНТА ==================
 function buildConfigUrl(server){
   return server.url + (server.url.includes('?') ? '&' : '?') + 'user=' + userId;
 }
@@ -622,7 +642,6 @@ function buildConfigUrl(server){
 function isAndroid(){ return /Android/i.test(navigator.userAgent); }
 function isIOS(){ return /iPad|iPhone|iPod/.test(navigator.userAgent); }
 
-// Преобразует кастомную схему в intent:// для Android
 function toIntentUrl(scheme, packageName){
   const idx = scheme.indexOf('://');
   if (idx === -1) return scheme;
@@ -635,19 +654,19 @@ function tryOpenClient(server){
   const client = CLIENTS[state.client];
   if (!client){ toast('Клиент не выбран'); return; }
   const configUrl = buildConfigUrl(server);
-  const scheme = client.scheme(configUrl);
+  const schemes = client.schemes(configUrl);
+  const packages = client.androidPackages || [null];
 
-  let target = scheme;
-
-  // На Android — конвертируем в intent:// с указанием пакета
-  if (isAndroid() && client.androidPackage){
-    target = toIntentUrl(scheme, client.androidPackage);
+  // Собираем все комбинации: пакет + схема
+  const attempts = [];
+  for (const pkg of packages) {
+    for (const s of schemes) {
+      attempts.push({ scheme: s, package: pkg });
+    }
   }
+  console.log('🔗 Всего попыток:', attempts.length, attempts);
 
-  console.log('🔗 Открываем:', target);
-
-  // Пытаемся открыть
-  const openedAt = Date.now();
+  let idx = 0;
   let appOpened = false;
 
   const checkVisibility = () => {
@@ -658,29 +677,48 @@ function tryOpenClient(server){
   document.addEventListener('visibilitychange', checkVisibility);
   window.addEventListener('blur', checkVisibility);
 
-  // Основной метод — location.href
-  try { window.location.href = target; } catch(e){ console.warn('href fail', e); }
-
-  // Через 1 секунду проверяем, ушли ли в фон
-  setTimeout(() => {
-    document.removeEventListener('visibilitychange', checkVisibility);
-    window.removeEventListener('blur', checkVisibility);
-
-    if (appOpened) {
-      // Приложение открылось — отмечаем подключённым
-      state.connected = true;
-      state.connectStart = Date.now();
-      updateMainUI();
-      startTimer();
-      startStats();
-      document.getElementById('connectBtn').disabled = false;
-      toast('Готово! Разрешите VPN в клиенте.');
-    } else {
-      // Не открылось — показываем fallback-модалку
+  const tryNext = () => {
+    if (appOpened) return;
+    if (idx >= attempts.length) {
+      // Все попытки исчерпаны — показываем модалку
+      document.removeEventListener('visibilitychange', checkVisibility);
+      window.removeEventListener('blur', checkVisibility);
       showInstallModal(state.client, configUrl);
       document.getElementById('connectBtn').disabled = false;
+      return;
     }
-  }, 1200);
+    const attempt = attempts[idx++];
+    let target = attempt.scheme;
+
+    if (isAndroid() && attempt.package){
+      target = toIntentUrl(attempt.scheme, attempt.package);
+    }
+
+    console.log('→ Попытка', idx, '/', attempts.length, ':', target);
+
+    try { window.location.href = target; } catch(e){ console.warn('href fail', e); }
+
+    // Ждём 700 мс и проверяем — если не ушли в фон, пробуем следующую
+    setTimeout(() => {
+      if (!appOpened && !document.hidden){
+        tryNext();
+      } else {
+        appOpened = true;
+        document.removeEventListener('visibilitychange', checkVisibility);
+        window.removeEventListener('blur', checkVisibility);
+        // Успех
+        state.connected = true;
+        state.connectStart = Date.now();
+        updateMainUI();
+        startTimer();
+        startStats();
+        document.getElementById('connectBtn').disabled = false;
+        toast('Готово! Разрешите VPN в клиенте.');
+      }
+    }, 700);
+  };
+
+  tryNext();
 }
 
 function showInstallModal(clientKey, configUrl){
@@ -702,7 +740,6 @@ function showInstallModal(clientKey, configUrl){
     box.appendChild(a);
   }
 
-  // Кнопка «Скопировать ссылку»
   const copyBtn = document.createElement('button');
   copyBtn.className = 'btn-secondary';
   copyBtn.textContent = '📋 Скопировать ссылку';
