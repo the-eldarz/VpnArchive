@@ -93,10 +93,9 @@ body{background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;
 .hint{margin:0 20px 16px;padding:12px 16px;background:var(--card-2);
   border-radius:var(--radius-sm);font-size:13px;color:var(--text-muted);line-height:1.5;}
 
-/* Client badge on main */
 .client-badge{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;
   background:var(--card-2);border-radius:20px;font-size:12px;font-weight:600;
-  color:var(--text-muted);margin-left:auto;}
+  color:var(--text-muted);}
 
 .segment{margin:0 20px 14px;padding:4px;background:var(--card-2);border-radius:12px;
   display:flex;gap:4px;}
@@ -154,7 +153,6 @@ body{background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;
 .set-item .val{font-size:14px;color:var(--text-muted);}
 .set-item .chev{color:var(--text-muted);}
 
-/* Client selector */
 .client-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;
   background:var(--card);padding:14px;border-radius:var(--radius-sm);}
 .client-opt{padding:14px 8px;border-radius:12px;background:var(--card-2);
@@ -195,7 +193,6 @@ body{background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;
   z-index:1000;max-width:85%;text-align:center;}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
 
-/* Modal fallback */
 .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:2000;
   display:none;align-items:center;justify-content:center;padding:24px;}
 .modal-bg.show{display:flex;}
@@ -204,8 +201,9 @@ body{background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;
 .modal h3{font-size:18px;margin-bottom:10px;}
 .modal p{font-size:14px;color:var(--text-muted);line-height:1.5;margin-bottom:20px;}
 .modal .buttons{display:flex;flex-direction:column;gap:8px;}
-.modal a{padding:12px;border-radius:12px;text-decoration:none;font-weight:600;
-  font-size:15px;display:flex;align-items:center;justify-content:center;gap:8px;}
+.modal a,.modal button{padding:12px;border-radius:12px;text-decoration:none;font-weight:600;
+  font-size:15px;display:flex;align-items:center;justify-content:center;gap:8px;
+  border:none;cursor:pointer;font-family:inherit;}
 .modal .btn-primary{background:var(--accent);color:#fff;}
 .modal .btn-secondary{background:var(--card-2);color:var(--text);}
 </style>
@@ -360,7 +358,7 @@ body{background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;
   </div>
 
   <div style="text-align:center;font-size:12px;color:var(--text-muted);padding:0 20px 20px;">
-    VPN Архив v1.0.0
+    VPN Архив v1.0.1
   </div>
 </div>
 
@@ -384,7 +382,7 @@ body{background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;
 <div class="modal-bg" id="modalBg">
   <div class="modal">
     <h3 id="modalTitle">Клиент не открылся</h3>
-    <p id="modalText">Похоже, приложение не установлено. Установите его из магазина приложений.</p>
+    <p id="modalText">Похоже, приложение не установлено или deep-link заблокирован.</p>
     <div class="buttons" id="modalButtons"></div>
   </div>
 </div>
@@ -396,12 +394,8 @@ const CONFIG = {
   AUTO_CHECK_MIN: 10,
 };
 
-// ================== TELEGRAM ==================
-let tg = null;
-try { tg = window.Telegram?.WebApp; tg?.expand(); tg?.ready(); } catch(e){}
-let tgUser = null;
-try { tgUser = tg?.initDataUnsafe?.user; } catch(e){}
-let userId = tgUser ? tgUser.id : CONFIG.DEMO_ID;
+// ================== USER ID ==================
+let userId = CONFIG.DEMO_ID;
 
 // ================== ХЕЛПЕРЫ ==================
 const $ = s => document.querySelector(s);
@@ -427,7 +421,7 @@ function fmtBytes(b){
   return (b/1073741824).toFixed(2)+' GB';
 }
 
-// ================== СПИСОК СЕРВЕРОВ ==================
+// ================== СЕРВЕРЫ ==================
 const SERVERS = [
   { dev:'igareck', name:'BLACK_SS+All_RUS',   flag:'🌍', region:'Россия', url:'https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/BLACK_SS%2BAll_RUS.txt' },
   { dev:'igareck', name:'BLACK_SS_WEAK_DPI',  flag:'🌍', region:'Россия', url:'https://raw.githubusercontent.com/igareck/vpn-configs-for-russia/main/BLACK_SS_WEAK_DPI_RUS.txt' },
@@ -451,7 +445,8 @@ const SERVERS = [
 const CLIENTS = {
   happ: {
     name: 'Happ',
-    scheme: url => 'happ://import?url=' + encodeURIComponent(url),
+    androidPackage: 'app.happ',
+    scheme: url => 'happ://add/' + encodeURIComponent(url),
     stores: {
       android: 'https://play.google.com/store/apps/details?id=app.happ',
       ios: 'https://apps.apple.com/ru/app/happ-proxy-utility/id673623643'
@@ -459,7 +454,8 @@ const CLIENTS = {
   },
   v2rayng: {
     name: 'v2rayNG',
-    scheme: url => 'v2rayng://install-config?url=' + encodeURIComponent(url),
+    androidPackage: 'com.v2ray.ang',
+    scheme: url => 'v2rayng://install-sub?url=' + encodeURIComponent(url),
     stores: {
       android: 'https://github.com/2dust/v2rayNG/releases/latest',
       ios: null
@@ -467,13 +463,8 @@ const CLIENTS = {
   },
   hiddify: {
     name: 'Hiddify',
-    scheme: url => {
-      // Hiddify хочет base64 без паддинга в URL
-      try {
-        const b64 = btoa(unescape(encodeURIComponent(url))).replace(/=+$/,'');
-        return 'hiddify://import/' + b64;
-      } catch(e){ return 'hiddify://import?url=' + encodeURIComponent(url); }
-    },
+    androidPackage: 'app.hiddify.com',
+    scheme: url => 'hiddify://import/' + encodeURIComponent(url),
     stores: {
       android: 'https://play.google.com/store/apps/details?id=app.hiddify.com',
       ios: 'https://apps.apple.com/app/hiddify-proxy-vpn/id6596777532'
@@ -543,7 +534,7 @@ function getFastestServer(){
   return best;
 }
 
-// ================== UI: СПИСОК СЕРВЕРОВ ==================
+// ================== UI ==================
 function renderServers(){
   const box = document.getElementById('serversContainer');
   if (!box) return;
@@ -594,7 +585,6 @@ function selectServer(s){
   toast('Выбран: ' + s.name);
 }
 
-// ================== UI: ГЛАВНАЯ ==================
 function updateMainUI(){
   if (state.currentServer){
     document.getElementById('curFlag').textContent = state.currentServer.flag;
@@ -617,31 +607,49 @@ function updateMainUI(){
     btn.classList.remove('disconnect');
     btnTxt.textContent = 'Подключиться';
   }
-  // Client badge
   const badge = document.getElementById('clientBadge');
   if (badge) badge.textContent = CLIENTS[state.client]?.name || 'Happ';
-  // Client selector UI
   document.querySelectorAll('.client-opt').forEach(el => {
     el.classList.toggle('active', el.dataset.client === state.client);
   });
 }
 
-// ================== ОТКРЫТИЕ КЛИЕНТА ==================
+// ================== ОТКРЫТИЕ КЛИЕНТА (РАБОТАЕТ НА GITHUB PAGES) ==================
 function buildConfigUrl(server){
   return server.url + (server.url.includes('?') ? '&' : '?') + 'user=' + userId;
+}
+
+function isAndroid(){ return /Android/i.test(navigator.userAgent); }
+function isIOS(){ return /iPad|iPhone|iPod/.test(navigator.userAgent); }
+
+// Преобразует кастомную схему в intent:// для Android
+function toIntentUrl(scheme, packageName){
+  const idx = scheme.indexOf('://');
+  if (idx === -1) return scheme;
+  const schemeName = scheme.substring(0, idx);
+  const path = scheme.substring(idx + 3);
+  return 'intent://' + path + '#Intent;scheme=' + schemeName + ';package=' + packageName + ';end';
 }
 
 function tryOpenClient(server){
   const client = CLIENTS[state.client];
   if (!client){ toast('Клиент не выбран'); return; }
-  const url = buildConfigUrl(server);
-  const scheme = client.scheme(url);
-  console.log('🔗 Открываем схему:', scheme);
+  const configUrl = buildConfigUrl(server);
+  const scheme = client.scheme(configUrl);
 
+  let target = scheme;
+
+  // На Android — конвертируем в intent:// с указанием пакета
+  if (isAndroid() && client.androidPackage){
+    target = toIntentUrl(scheme, client.androidPackage);
+  }
+
+  console.log('🔗 Открываем:', target);
+
+  // Пытаемся открыть
   const openedAt = Date.now();
   let appOpened = false;
 
-  // Детектор того, что приложение реально открылось (страница ушла в фон)
   const checkVisibility = () => {
     if (document.hidden || document.visibilityState === 'hidden') {
       appOpened = true;
@@ -650,76 +658,36 @@ function tryOpenClient(server){
   document.addEventListener('visibilitychange', checkVisibility);
   window.addEventListener('blur', checkVisibility);
 
-  // Метод 1: прямой переход
-  try { window.location.href = scheme; } catch(e){ console.warn('href fail', e); }
+  // Основной метод — location.href
+  try { window.location.href = target; } catch(e){ console.warn('href fail', e); }
 
-  // Метод 2: window.open через 200 мс
-  setTimeout(() => {
-    if (appOpened) return;
-    try {
-      const w = window.open(scheme, '_blank');
-      if (w === null) console.log('window.open blocked');
-    } catch(e){ console.warn('window.open fail', e); }
-  }, 200);
-
-  // Метод 3: iframe через 500 мс
-  setTimeout(() => {
-    if (appOpened) return;
-    try {
-      const iframe = document.createElement('iframe');
-      iframe.style.cssText = 'display:none;width:0;height:0;border:0;';
-      iframe.src = scheme;
-      document.body.appendChild(iframe);
-      setTimeout(() => iframe.remove(), 1500);
-    } catch(e){ console.warn('iframe fail', e); }
-  }, 500);
-
-  // Метод 4: tg.openLink через 800 мс (для Telegram)
-  setTimeout(() => {
-    if (appOpened) return;
-    if (tg && typeof tg.openLink === 'function'){
-      try { tg.openLink(scheme); } catch(e){ console.warn('tg.openLink fail', e); }
-    }
-  }, 800);
-
-  // Метод 5: обычная ссылка в новом окне через 1200 мс (иногда помогает)
-  setTimeout(() => {
-    if (appOpened) return;
-    try {
-      const a = document.createElement('a');
-      a.href = scheme;
-      a.target = '_blank';
-      a.rel = 'noopener';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-    } catch(e){ console.warn('anchor fail', e); }
-  }, 1200);
-
-  // Проверка через 2 секунды — открылось ли?
+  // Через 1 секунду проверяем, ушли ли в фон
   setTimeout(() => {
     document.removeEventListener('visibilitychange', checkVisibility);
     window.removeEventListener('blur', checkVisibility);
+
     if (appOpened) {
+      // Приложение открылось — отмечаем подключённым
       state.connected = true;
       state.connectStart = Date.now();
       updateMainUI();
       startTimer();
       startStats();
-      btn.disabled = false;
+      document.getElementById('connectBtn').disabled = false;
+      toast('Готово! Разрешите VPN в клиенте.');
     } else {
-      showInstallModal(state.client);
-      btn.disabled = false;
+      // Не открылось — показываем fallback-модалку
+      showInstallModal(state.client, configUrl);
+      document.getElementById('connectBtn').disabled = false;
     }
-  }, 2000);
+  }, 1200);
 }
 
-function showInstallModal(clientKey){
+function showInstallModal(clientKey, configUrl){
   const client = CLIENTS[clientKey];
   if (!client) return;
-  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-  const storeUrl = isIOS ? client.stores.ios : client.stores.android;
-  const text = 'Клиент «' + client.name + '» не открылся. Возможно, он не установлен или deep-link заблокирован.';
+  const storeUrl = isIOS() ? client.stores.ios : client.stores.android;
+  const text = 'Клиент «' + client.name + '» не открылся. Установите его из магазина приложений или скопируйте ссылку и вставьте вручную.';
 
   document.getElementById('modalText').textContent = text;
   const box = document.getElementById('modalButtons');
@@ -732,18 +700,34 @@ function showInstallModal(clientKey){
     a.target = '_blank';
     a.textContent = 'Установить ' + client.name;
     box.appendChild(a);
-  } else {
-    const p = document.createElement('div');
-    p.style.cssText = 'font-size:13px;color:var(--text-muted);margin-bottom:10px;';
-    p.textContent = 'Для iOS этот клиент недоступен. Попробуйте Happ или Hiddify.';
-    box.appendChild(p);
   }
 
-  const cancel = document.createElement('a');
+  // Кнопка «Скопировать ссылку»
+  const copyBtn = document.createElement('button');
+  copyBtn.className = 'btn-secondary';
+  copyBtn.textContent = '📋 Скопировать ссылку';
+  copyBtn.onclick = () => {
+    if (navigator.clipboard){
+      navigator.clipboard.writeText(configUrl).then(() => {
+        toast('Ссылка скопирована. Откройте ' + client.name + ' и вставьте.');
+        hideModal();
+      });
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = configUrl;
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); toast('Скопировано'); } catch(e){}
+      document.body.removeChild(ta);
+      hideModal();
+    }
+  };
+  box.appendChild(copyBtn);
+
+  const cancel = document.createElement('button');
   cancel.className = 'btn-secondary';
-  cancel.href = '#';
   cancel.textContent = 'Закрыть';
-  cancel.onclick = (e) => { e.preventDefault(); hideModal(); };
+  cancel.onclick = hideModal;
   box.appendChild(cancel);
 
   document.getElementById('modalBg').classList.add('show');
@@ -756,8 +740,7 @@ function hideModal(){
 // ================== ПОДКЛЮЧЕНИЕ ==================
 function connect(){
   if (!state.currentServer){ toast('Выберите сервер'); return; }
-  const btn = document.getElementById('connectBtn');
-  btn.disabled = true;
+  document.getElementById('connectBtn').disabled = true;
   toast('Открываем ' + (CLIENTS[state.client]?.name || 'клиент') + '...');
   tryOpenClient(state.currentServer);
 }
@@ -873,7 +856,6 @@ document.getElementById('copyIdBtn').addEventListener('click', () => {
   if (navigator.clipboard) navigator.clipboard.writeText(String(userId)).then(() => toast('ID скопирован'));
 });
 
-// Выбор клиента
 document.querySelectorAll('.client-opt').forEach(el => {
   el.addEventListener('click', () => {
     state.client = el.dataset.client;
@@ -913,7 +895,6 @@ document.getElementById('supportBtn').addEventListener('click', () => {
   window.open('https://t.me/TerchVPN_support', '_blank');
 });
 
-// Закрытие модалки по фону
 document.getElementById('modalBg').addEventListener('click', e => {
   if (e.target.id === 'modalBg') hideModal();
 });
